@@ -20,27 +20,22 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          # تم تصحيح cpia إلى cpio وإضافة أدوات نحتاجها لفك الضغط
           sudo apt-get install -y python3 python3-pip python3-setuptools cpio xz-utils gzip
           pip3 install twrpdtgen --break-system-packages
 
       - name: Download Images
         run: |
-          mkdir input
-          curl -L "${{ github.event.inputs.boot_url }}" -o input/boot.img
+          # هنحط الملفات في الـ Root عشان الأداة تلاقيهم مع بعض تلقائياً
+          curl -L "${{ github.event.inputs.boot_url }}" -o boot.img
           if [ -n "${{ github.event.inputs.vendor_boot_url }}" ]; then
-            curl -L "${{ github.event.inputs.vendor_boot_url }}" -o input/vendor_boot.img
+            curl -L "${{ github.event.inputs.vendor_boot_url }}" -o vendor_boot.img
           fi
 
       - name: Generate Recovery Tree
         run: |
+          # تشغيل الأداة على boot.img فقط وهي هتسحب vendor_boot لو موجود في نفس الفولدر
           mkdir output
-          # إذا وجد ملف vendor_boot، الأداة ستحتاجه في الأجهزة الحديثة
-          if [ -f "input/vendor_boot.img" ]; then
-             python3 -m twrpdtgen input/boot.img --vendor_boot input/vendor_boot.img --output output/
-          else
-             python3 -m twrpdtgen input/boot.img --output output/
-          fi
+          python3 -m twrpdtgen boot.img --output output/
 
       - name: Upload Recovery Tree
         uses: actions/upload-artifact@v4
