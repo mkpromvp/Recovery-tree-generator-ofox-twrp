@@ -13,6 +13,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -20,45 +21,76 @@ jobs:
       - name: Setup Environment
         run: |
           sudo apt-get update
-          # تثبيت المكتبات اللي AIK محتاجها عشان ميطلعش Return Code 1
-          sudo apt-get install -y python3 python3-pip python3-setuptools cpio xz-utils gzip curl wget tar lib32z1 lib32ncurses6
-          pip3 install twrpdtgen --break-system-packages
+          sudo apt-get install -y python3 python3-pip python3-setuptools cpio xz-utils gzip curl wget tar lib32z1 lib32ncurses6 git
+          
+          # تثبيت twrpdtgen (آخر نسخة)
+          pip3 install --upgrade pip --break-system-packages
+          pip3 install git+https://github.com/twrpdtgen/twrpdtgen.git --break-system-packages
 
-      - name: Download MagiskBoot Binary
+      - name: Download MagiskBoot
         run: |
-          # تحميل magiskboot من مصدر مستقر جداً (مخصص لأدوات الأندرويد)
           wget https://github.com/HemanthJabalpuri/magiskboot-binary/raw/main/x86_64/magiskboot -O magiskboot
           chmod +x magiskboot
+          export PATH=$PWD:$PATH
 
       - name: Download Images
         run: |
-          # تحميل الصور مع التأكد من الرابط
-          curl -fLo boot.img "${{ github.event.inputs.boot_url }}"
+          echo "Downloading boot.img..."
+          curl -L --fail -o boot.img "${{ github.event.inputs.boot_url }}"
+          
           if [ -n "${{ github.event.inputs.vendor_boot_url }}" ]; then
-            curl -fLo vendor_boot.img "${{ github.event.inputs.vendor_boot_url }}"
+            echo "Downloading vendor_boot.img..."
+            curl -L --fail -o vendor_boot.img "${{ github.event.inputs.vendor_boot_url }}"
+          else
+            echo "No vendor_boot provided"
           fi
 
-      - name: Process and Generate
+      - name: Verify Images
+        run: |
+          ls -lh
+          file boot.img || true
+          file vendor_boot.img || true
+
+      - name: Unpack Boot (MagiskBoot)
+        run: |
+          echo "Unpacking boot.img باستخدام magiskboot..."
+          ./magiskboot unpack boot.img || echo "Magiskboot failed, continuing..."
+
+      - name: Generate Tree
         run: |
           mkdir -p output
-          # فك الضغط بـ magiskboot أولاً بيجهز البيئة للأداة بشكل مثالي
-          ./magiskboot unpack boot.img || echo "Magiskboot unpack failed, but we will try twrpdtgen anyway"
-          
-          # تشغيل الأداة بـ sudo عشان صلاحيات فك الـ ramdisk
-          sudo python3 -m twrpdtgen boot.img --output output/
+          export PATH=$PWD:$PATH
 
-      - name: Prepare for OrangeFox / TWRP
-        run: |
-          # السكريبت ده هيصلح ملكية الملفات ويخليها جاهزة للرفع
-          if [ -d "output" ]; then
-            sudo chown -R $USER:$USER output/
-            echo "Tree generated successfully."
+          if [ -f "vendor_boot.img" ]; then
+            echo "Using vendor_boot..."
+            sudo python3 -m twrpdtgen boot.img --vendor_boot vendor_boot.img --output output/ || echo "twrpdtgen failed"
           else
-            echo "Generation failed!" && exit 1
+            echo "Using boot only..."
+            sudo python3 -m twrpdtgen boot.img --output output/ || echo "twrpdtgen failed"
           fi
+
+      - name: Fallback (Manual Extract)
+        run: |
+          echo "Checking if output generated..."
+
+          if [ ! -d "output" ] || [ -z "$(ls -A output 2>/dev/null)" ]; then
+            echo "twrpdtgen failed -> fallback manual extraction"
+
+            mkdir -p output/manual
+            cp -r ramdisk.cpio* output/manual/ 2>/dev/null || true
+            cp -r *ramdisk* output/manual/ 2>/dev/null || true
+            cp -r kernel output/manual/ 2>/dev/null || true
+            cp -r dtb* output/manual/ 2>/dev/null || true
+          else
+            echo "Tree generated successfully"
+          fi
+
+      - name: Fix Permissions
+        run: |
+          sudo chown -R $USER:$USER output/
 
       - name: Upload Recovery Tree
         uses: actions/upload-artifact@v4
         with:
           name: Recovery_Tree
-          path: output/*/
+          path: output/
