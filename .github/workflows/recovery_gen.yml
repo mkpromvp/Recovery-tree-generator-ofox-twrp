@@ -23,14 +23,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y python3 python3-pip python3-setuptools cpio xz-utils gzip curl wget tar lib32z1 lib32ncurses6 git
           
-          # تثبيت twrpdtgen (آخر نسخة)
           pip3 install --upgrade pip --break-system-packages
           pip3 install git+https://github.com/twrpdtgen/twrpdtgen.git --break-system-packages
 
-      - name: Download MagiskBoot
+      - name: Install MagiskBoot (Stable الطريقة الصح)
         run: |
-          wget https://github.com/HemanthJabalpuri/magiskboot-binary/raw/main/x86_64/magiskboot -O magiskboot
-          chmod +x magiskboot
+          echo "Cloning Magisk للحصول على magiskboot..."
+          git clone https://github.com/topjohnwu/Magisk.git
+          
+          # نحاول نلاقي الباينري
+          find Magisk -type f -name magiskboot -exec cp {} ./magiskboot \; || true
+          
+          chmod +x magiskboot || true
           export PATH=$PWD:$PATH
 
       - name: Download Images
@@ -47,13 +51,14 @@ jobs:
 
       - name: Verify Images
         run: |
+          echo "Listing files..."
           ls -lh
           file boot.img || true
           file vendor_boot.img || true
 
       - name: Unpack Boot (MagiskBoot)
         run: |
-          echo "Unpacking boot.img باستخدام magiskboot..."
+          echo "Unpacking boot.img..."
           ./magiskboot unpack boot.img || echo "Magiskboot failed, continuing..."
 
       - name: Generate Tree
@@ -71,16 +76,19 @@ jobs:
 
       - name: Fallback (Manual Extract)
         run: |
-          echo "Checking if output generated..."
+          echo "Checking output..."
 
           if [ ! -d "output" ] || [ -z "$(ls -A output 2>/dev/null)" ]; then
-            echo "twrpdtgen failed -> fallback manual extraction"
+            echo "twrpdtgen failed -> extracting manually"
 
             mkdir -p output/manual
+
             cp -r ramdisk.cpio* output/manual/ 2>/dev/null || true
             cp -r *ramdisk* output/manual/ 2>/dev/null || true
             cp -r kernel output/manual/ 2>/dev/null || true
             cp -r dtb* output/manual/ 2>/dev/null || true
+
+            echo "Manual extraction done"
           else
             echo "Tree generated successfully"
           fi
