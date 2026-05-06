@@ -1,4 +1,4 @@
-name: Recovery Tree Generator Professional
+name: Recovery Tree Generator Final
 
 on:
   workflow_dispatch:
@@ -23,39 +23,40 @@ jobs:
           sudo apt-get install -y python3 python3-pip python3-setuptools cpio xz-utils gzip curl wget tar
           pip3 install twrpdtgen --break-system-packages
 
-      - name: Download Images and Tools
+      - name: Download Tools
         run: |
-          # تحميل الصور
-          curl -L "${{ github.event.inputs.boot_url }}" -o boot.img
-          if [ -n "${{ github.event.inputs.vendor_boot_url }}" ]; then
-            curl -L "${{ github.event.inputs.vendor_boot_url }}" -o vendor_boot.img
-          fi
-          
-          # تحميل magiskboot لضمان فك الضغط بنجاح بعيداً عن مشاكل AIK
-          wget https://github.com/magisk-mods/magiskboot-binaries/raw/main/bin/linux/x86_64/magiskboot
+          # تحميل magiskboot من مصدر بديل وموثوق
+          wget https://github.com/tiann/KernelSU/raw/main/kernel/scripts/magiskboot -O magiskboot
           chmod +x magiskboot
 
-      - name: Pre-process with MagiskBoot
+      - name: Download Images
         run: |
-          # محاولة فك الملف للتأكد إنه سليم واستخراج الـ ramdisk والـ kernel
-          ./magiskboot unpack boot.img || echo "Magiskboot couldn't unpack, letting twrpdtgen try anyway"
+          # تحميل الملفات مع إضافة -L لاتباع الروابط المختصرة
+          curl -fLo boot.img "${{ github.event.inputs.boot_url }}"
+          
+          if [ -n "${{ github.event.inputs.vendor_boot_url }}" ]; then
+            curl -fLo vendor_boot.img "${{ github.event.inputs.vendor_boot_url }}"
+          fi
 
-      - name: Generate Recovery Tree
+      - name: Pre-process and Generate
         run: |
           mkdir output
-          # تشغيل الأداة مع تخطي الاعتماد الكلي على AIK لو أمكن
-          # الأداة هتشوف الملفات اللي اتفكت أو هتحاول هي بـ sudo
+          # محاولة فك الضغط يدويًا أولاً لتهيئة البيئة لـ twrpdtgen
+          ./magiskboot unpack boot.img || echo "Magiskboot skip"
+          
+          # تشغيل الأداة (استخدام sudo هنا لحل مشاكل AIK الداخلية)
           sudo python3 -m twrpdtgen boot.img --output output/
 
-      - name: Fix Permissions and Cleanup
+      - name: Fix Permissions
         if: always()
         run: |
-          sudo chown -R $USER:$USER output/
-          # حذف الصور لتقليل مساحة الـ Artifact
-          rm -f boot.img vendor_boot.img magiskboot kernel ramdisk.cpio dtb
+          # تأكد من وجود المجلد قبل تغيير الملكية
+          if [ -d "output" ]; then
+            sudo chown -R $USER:$USER output/
+          fi
 
       - name: Upload Recovery Tree
         uses: actions/upload-artifact@v4
         with:
-          name: Recovery_Tree_${{ github.run_id }}
+          name: Recovery_Tree
           path: output/*
