@@ -20,22 +20,32 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3 python3-pip python3-setuptools cpio xz-utils gzip
+          sudo apt-get install -y python3 python3-pip python3-setuptools cpio xz-utils gzip curl
+          # تثبيت المكتبة للمستخدم الحالي وللسيسستم عشان sudo يشوفها
           pip3 install twrpdtgen --break-system-packages
+          sudo pip3 install twrpdtgen --break-system-packages
 
       - name: Download Images
         run: |
-          # هنحط الملفات في الـ Root عشان الأداة تلاقيهم مع بعض تلقائياً
           curl -L "${{ github.event.inputs.boot_url }}" -o boot.img
           if [ -n "${{ github.event.inputs.vendor_boot_url }}" ]; then
             curl -L "${{ github.event.inputs.vendor_boot_url }}" -o vendor_boot.img
           fi
+          # إعطاء صلاحيات كاملة للملفات المحملة
+          chmod 777 boot.img
+          [ -f vendor_boot.img ] && chmod 777 vendor_boot.img
 
       - name: Generate Recovery Tree
         run: |
-          # تشغيل الأداة على boot.img فقط وهي هتسحب vendor_boot لو موجود في نفس الفولدر
           mkdir output
-          python3 -m twrpdtgen boot.img --output output/
+          # التشغيل باستخدام sudo ضروري لـ AIK لفك الـ ramdisk
+          sudo python3 -m twrpdtgen boot.img --output output/
+
+      - name: Fix Permissions
+        if: always()
+        run: |
+          # الأداة لما بتشتغل بـ sudo بتطلع ملفات صاحبها root، لازم نرجع ملكيتها لينا عشان الـ Upload يشتغل
+          sudo chown -R $USER:$USER output/
 
       - name: Upload Recovery Tree
         uses: actions/upload-artifact@v4
