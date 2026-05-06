@@ -1,4 +1,4 @@
-name: Recovery Tree Generator
+name: Recovery Tree Generator Professional
 
 on:
   workflow_dispatch:
@@ -20,35 +20,42 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3 python3-pip python3-setuptools cpio xz-utils gzip curl
-          # تثبيت المكتبة للمستخدم الحالي وللسيسستم عشان sudo يشوفها
+          sudo apt-get install -y python3 python3-pip python3-setuptools cpio xz-utils gzip curl wget tar
           pip3 install twrpdtgen --break-system-packages
-          sudo pip3 install twrpdtgen --break-system-packages
 
-      - name: Download Images
+      - name: Download Images and Tools
         run: |
+          # تحميل الصور
           curl -L "${{ github.event.inputs.boot_url }}" -o boot.img
           if [ -n "${{ github.event.inputs.vendor_boot_url }}" ]; then
             curl -L "${{ github.event.inputs.vendor_boot_url }}" -o vendor_boot.img
           fi
-          # إعطاء صلاحيات كاملة للملفات المحملة
-          chmod 777 boot.img
-          [ -f vendor_boot.img ] && chmod 777 vendor_boot.img
+          
+          # تحميل magiskboot لضمان فك الضغط بنجاح بعيداً عن مشاكل AIK
+          wget https://github.com/magisk-mods/magiskboot-binaries/raw/main/bin/linux/x86_64/magiskboot
+          chmod +x magiskboot
+
+      - name: Pre-process with MagiskBoot
+        run: |
+          # محاولة فك الملف للتأكد إنه سليم واستخراج الـ ramdisk والـ kernel
+          ./magiskboot unpack boot.img || echo "Magiskboot couldn't unpack, letting twrpdtgen try anyway"
 
       - name: Generate Recovery Tree
         run: |
           mkdir output
-          # التشغيل باستخدام sudo ضروري لـ AIK لفك الـ ramdisk
+          # تشغيل الأداة مع تخطي الاعتماد الكلي على AIK لو أمكن
+          # الأداة هتشوف الملفات اللي اتفكت أو هتحاول هي بـ sudo
           sudo python3 -m twrpdtgen boot.img --output output/
 
-      - name: Fix Permissions
+      - name: Fix Permissions and Cleanup
         if: always()
         run: |
-          # الأداة لما بتشتغل بـ sudo بتطلع ملفات صاحبها root، لازم نرجع ملكيتها لينا عشان الـ Upload يشتغل
           sudo chown -R $USER:$USER output/
+          # حذف الصور لتقليل مساحة الـ Artifact
+          rm -f boot.img vendor_boot.img magiskboot kernel ramdisk.cpio dtb
 
       - name: Upload Recovery Tree
         uses: actions/upload-artifact@v4
         with:
-          name: Recovery_Tree
+          name: Recovery_Tree_${{ github.run_id }}
           path: output/*
