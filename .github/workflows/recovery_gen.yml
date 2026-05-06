@@ -26,12 +26,11 @@ jobs:
           pip3 install --upgrade pip --break-system-packages
           pip3 install git+https://github.com/twrpdtgen/twrpdtgen.git --break-system-packages
 
-      - name: Install MagiskBoot (Stable الطريقة الصح)
+      - name: Install MagiskBoot
         run: |
-          echo "Cloning Magisk للحصول على magiskboot..."
+          echo "Cloning Magisk..."
           git clone https://github.com/topjohnwu/Magisk.git
           
-          # نحاول نلاقي الباينري
           find Magisk -type f -name magiskboot -exec cp {} ./magiskboot \; || true
           
           chmod +x magiskboot || true
@@ -51,7 +50,6 @@ jobs:
 
       - name: Verify Images
         run: |
-          echo "Listing files..."
           ls -lh
           file boot.img || true
           file vendor_boot.img || true
@@ -59,7 +57,7 @@ jobs:
       - name: Unpack Boot (MagiskBoot)
         run: |
           echo "Unpacking boot.img..."
-          ./magiskboot unpack boot.img || echo "Magiskboot failed, continuing..."
+          ./magiskboot unpack boot.img || echo "Magiskboot failed"
 
       - name: Generate Tree
         run: |
@@ -74,24 +72,33 @@ jobs:
             sudo python3 -m twrpdtgen boot.img --output output/ || echo "twrpdtgen failed"
           fi
 
-      - name: Fallback (Manual Extract)
+      - name: Fallback (Force Extract 🔥)
         run: |
           echo "Checking output..."
 
+          mkdir -p output/fallback
+
           if [ ! -d "output" ] || [ -z "$(ls -A output 2>/dev/null)" ]; then
-            echo "twrpdtgen failed -> extracting manually"
+            echo "No tree generated -> forcing extraction"
 
-            mkdir -p output/manual
+            # انسخ كل الملفات اللي اتفكت
+            cp -r * output/fallback/ 2>/dev/null || true
 
-            cp -r ramdisk.cpio* output/manual/ 2>/dev/null || true
-            cp -r *ramdisk* output/manual/ 2>/dev/null || true
-            cp -r kernel output/manual/ 2>/dev/null || true
-            cp -r dtb* output/manual/ 2>/dev/null || true
+            # فك ramdisk لو موجود
+            if [ -f "ramdisk.cpio" ]; then
+              mkdir -p output/ramdisk
+              cd output/ramdisk
+              cpio -idmv < ../../ramdisk.cpio || true
+              cd ../../
+            fi
 
-            echo "Manual extraction done"
+            echo "Fallback extraction DONE"
           else
             echo "Tree generated successfully"
           fi
+
+          echo "Output content:"
+          ls -R output || true
 
       - name: Fix Permissions
         run: |
