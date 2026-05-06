@@ -1,13 +1,13 @@
-name: Recovery Tree Generator Final
+name: Recovery Tree Generator Final Boss
 
 on:
   workflow_dispatch:
     inputs:
       boot_url:
-        description: 'Direct link to boot.img'
+        description: 'رابط ملف boot.img'
         required: true
       vendor_boot_url:
-        description: 'Direct link to vendor_boot.img (Optional)'
+        description: 'رابط ملف vendor_boot.img (اختياري)'
         required: false
 
 jobs:
@@ -17,46 +17,48 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install Dependencies
+      - name: Setup Environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3 python3-pip python3-setuptools cpio xz-utils gzip curl wget tar
+          # تثبيت المكتبات اللي AIK محتاجها عشان ميطلعش Return Code 1
+          sudo apt-get install -y python3 python3-pip python3-setuptools cpio xz-utils gzip curl wget tar lib32z1 lib32ncurses6
           pip3 install twrpdtgen --break-system-packages
 
-      - name: Download Tools
+      - name: Download MagiskBoot Binary
         run: |
-          # تحميل magiskboot من مصدر بديل وموثوق
-          wget https://github.com/tiann/KernelSU/raw/main/kernel/scripts/magiskboot -O magiskboot
+          # تحميل magiskboot من مصدر مستقر جداً (مخصص لأدوات الأندرويد)
+          wget https://github.com/HemanthJabalpuri/magiskboot-binary/raw/main/x86_64/magiskboot -O magiskboot
           chmod +x magiskboot
 
       - name: Download Images
         run: |
-          # تحميل الملفات مع إضافة -L لاتباع الروابط المختصرة
+          # تحميل الصور مع التأكد من الرابط
           curl -fLo boot.img "${{ github.event.inputs.boot_url }}"
-          
           if [ -n "${{ github.event.inputs.vendor_boot_url }}" ]; then
             curl -fLo vendor_boot.img "${{ github.event.inputs.vendor_boot_url }}"
           fi
 
-      - name: Pre-process and Generate
+      - name: Process and Generate
         run: |
-          mkdir output
-          # محاولة فك الضغط يدويًا أولاً لتهيئة البيئة لـ twrpdtgen
-          ./magiskboot unpack boot.img || echo "Magiskboot skip"
+          mkdir -p output
+          # فك الضغط بـ magiskboot أولاً بيجهز البيئة للأداة بشكل مثالي
+          ./magiskboot unpack boot.img || echo "Magiskboot unpack failed, but we will try twrpdtgen anyway"
           
-          # تشغيل الأداة (استخدام sudo هنا لحل مشاكل AIK الداخلية)
+          # تشغيل الأداة بـ sudo عشان صلاحيات فك الـ ramdisk
           sudo python3 -m twrpdtgen boot.img --output output/
 
-      - name: Fix Permissions
-        if: always()
+      - name: Prepare for OrangeFox / TWRP
         run: |
-          # تأكد من وجود المجلد قبل تغيير الملكية
+          # السكريبت ده هيصلح ملكية الملفات ويخليها جاهزة للرفع
           if [ -d "output" ]; then
             sudo chown -R $USER:$USER output/
+            echo "Tree generated successfully."
+          else
+            echo "Generation failed!" && exit 1
           fi
 
       - name: Upload Recovery Tree
         uses: actions/upload-artifact@v4
         with:
           name: Recovery_Tree
-          path: output/*
+          path: output/*/
